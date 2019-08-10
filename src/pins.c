@@ -191,37 +191,65 @@ void configureADC(){
 
 //char I2C_read(char);
 void I2C_write(char, char);
-/*
-30 fps QQVGA YUV mode
-QQVGA
-CLKRC 0x11 0x01
-COM7 0x12 0x00
-COM3 0x0C 0x04
-COM14 0x3E 0x1A
-SCALING_XSC 0x70 0x3A
-SCALING_YSC 0x71 0x35
-SCALING_DCWCTR 0x72 0x22
-SCALING_PCLK_DIV 0x73 0xF2
-SCALING_PCLK_ DELAY 0xA2 0x02
-*/
+
+//register, value, ...
+char RV1[] = {
+
+		//QQVGA, YUV according to IG
+		0x11, 0x02, //prescaler
+		0x12, 0x00,
+		0x0c, 0x04,
+		0x3e, 0x1a,
+		0x70, 0x3a,
+		0x71, 0x35,
+		0x72, 0x22,
+		0x73, 0xf2,
+		0xa2, 0x02,
+		0x15, 0x20,	//gate PCLK via HREF
+		0xff, 0xff	//terminate
+};
+char RV2[] = {
+		//QVGA, YUV according to IG
+		0x11, 0x0F, //prescaler
+		0x12, 0x00,
+		0x0c, 0x04,
+		0x3e, 0x19,
+		0x70, 0x3a,
+		0x71, 0x35,
+		0x72, 0x11,
+		0x73, 0xf1,
+		0xa2, 0x02,
+		0x15, 0x20,	//gate PCLK via HREF
+		0xff, 0xff //terminate
+};
+char RV3[] = {
+		//QVGA, YUV according to IG
+		0x11, 0x0A, //prescaler
+		0x12, 0x00,
+		0x0c, 0x00,
+		0x3e, 0x00,
+		0x70, 0x3a,
+		0x71, 0x35,
+		0x72, 0x11,
+		0x73, 0xf0,
+		0xa2, 0x02,
+		//0x56, 0x60, //contrast
+		//0x41, 0x30, //sharpness
+		0x15, 0x20,	//gate PCLK via HREF
+		0xff, 0xff //terminate
+};
 void configureCamera(void){
 	volatile int i;
 	for(i=100000;i>0;--i); //give time to start
 	I2C_write(0x12, 0x80); //RESET
 	for(i=100000;i>0;--i);
 
-	//QQVGA, YUV according to IG
-	I2C_write(0x11, 0x1F); //IG:01, set max prescaler
-	I2C_write(0x12, 0x00); //00
-	I2C_write(0x0C, 0x04); //04
-	I2C_write(0x3E, 0x1a); //1a
-	I2C_write(0x70, 0x3a); //3a
-	I2C_write(0x71, 0x35); //35
-	I2C_write(0x72, 0x22); //22
-	I2C_write(0x73, 0xF2); //f2
-	I2C_write(0xA2, 0x02); //02
-	// gate PCLK via HREF
-	I2C_write(0x15, 0x20); //no PLCK tgl on blank
+	i = 0;
+	char* p = RV3;
+	while(p[i] != 0xff){
+		I2C_write(p[i], p[i+1]);
+		i=i+2;
+	}
 }
 
 void configureDMA(){
@@ -246,40 +274,65 @@ void blink(){
 }
 
 int r4=0;
+char RX=0;
+char Rxr=0;
+char Rxv=0;
 __attribute__((interrupt)) void USART1_IRQHandler(void){
 	if(USART1->SR & USART_SR_RXNE){
-		// on data receive: action
-		(void)USART1->DR; //MUST-READ
-		USART1->DR = 'k';//
-		/*
-		 *         __                      __
-		 * _______/  \____________________/  \_Vsync
-		 *   _           _   _   _   _
-		 * _/ \_________/ \_/ \_/ \_/ \________ Pclk
-		 *
-		 *           +DMA                  +dma
-		 */
-		while(!(USART1->SR & USART_SR_TXE));
-		//if((GPIOB->IDR & GPIO_IDR_IDR11))
-		//while(GPIOB->IDR & GPIO_IDR_IDR11);
+		RX = USART1->DR; //MUST-READ
+		switch(RX){
+		case '1': //capture
+			// on data receive: action
 
-		while(!(GPIOB->IDR & GPIO_IDR_IDR11));
+			USART1->DR = 'k';//
+			/*
+			 *         __                      __
+			 * _______/  \____________________/  \_Vsync
+			 *   _           _   _   _   _
+			 * _/ \_________/ \_/ \_/ \_/ \________ Pclk
+			 *
+			 *           +DMA                  +dma
+			 */
+			while(!(USART1->SR & USART_SR_TXE));
+			//if((GPIOB->IDR & GPIO_IDR_IDR11))
+			//while(GPIOB->IDR & GPIO_IDR_IDR11);
 
-		GPIOC->BSRR = GPIO_BSRR_BR13;
-		TIM1->CR1 |= TIM_CR1_CEN;
-		DMA1_Channel4->CCR |= DMA_CCR4_EN;
-		//for(int i=0; i<100;++i)asm("nop");
-		//NVIC_ClearPendingIRQ(EXTI15_10_IRQn);
-		//EXTI->PR = 0xFFFF;
-		NVIC_EnableIRQ(EXTI15_10_IRQn);
-		//while((GPIOB->IDR & GPIO_IDR_IDR11));
-		//for(int i=0; i<0xFFFF; ++i) asm("nop");
-		//for(volatile int i=0; i<130455; ++i);
-		while(GPIOB->IDR & GPIO_IDR_IDR11);
+			while(!(GPIOB->IDR & GPIO_IDR_IDR11));
 
-		//while(!(GPIOB->IDR & GPIO_IDR_IDR11));
-		//DMA1_Channel4->CCR &= ~DMA_CCR4_EN;
-		//TIM1->CR1 &= ~TIM_CR1_CEN;
+			GPIOC->BSRR = GPIO_BSRR_BR13;
+			TIM1->CR1 |= TIM_CR1_CEN;
+			DMA1_Channel4->CCR |= DMA_CCR4_EN;
+			//for(int i=0; i<100;++i)asm("nop");
+			//NVIC_ClearPendingIRQ(EXTI15_10_IRQn);
+			//EXTI->PR = 0xFFFF;
+			NVIC_EnableIRQ(EXTI15_10_IRQn);
+			//while((GPIOB->IDR & GPIO_IDR_IDR11));
+			//for(int i=0; i<0xFFFF; ++i) asm("nop");
+			//for(volatile int i=0; i<130455; ++i);
+			while(GPIOB->IDR & GPIO_IDR_IDR11);
+
+			//while(!(GPIOB->IDR & GPIO_IDR_IDR11));
+			//DMA1_Channel4->CCR &= ~DMA_CCR4_EN;
+			//TIM1->CR1 &= ~TIM_CR1_CEN;
+			break;
+		case '9': //command
+			NVIC_DisableIRQ(USART1_IRQn);
+			USART1->DR = 'r';
+			while(!(USART1->SR & USART_SR_RXNE));
+			Rxr = USART1->DR;
+			USART1->DR = 'v';
+			while(!(USART1->SR & USART_SR_RXNE));
+			Rxv = USART1->DR;
+			I2C_write(Rxr, Rxv);
+			USART1->DR = 'i';
+			NVIC_ClearPendingIRQ(USART1_IRQn);
+			NVIC_EnableIRQ(USART1_IRQn);
+			break;
+		case 'R': //reset all
+			break;
+		case 'r': //reset camera
+			break;
+		}
 	}
 }
 

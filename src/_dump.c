@@ -19,6 +19,21 @@
 	*/
 
 //================================================
+
+/*
+	//QQVGA, YUV according to IG
+	I2C_write(0x11, 0x02); //IG:01, set higher prescaler
+	I2C_write(0x12, 0x00); //00
+	I2C_write(0x0C, 0x04); //04
+	I2C_write(0x3E, 0x1a); //1a
+	I2C_write(0x70, 0x3a); //3a
+	I2C_write(0x71, 0x35); //35
+	I2C_write(0x72, 0x22); //22
+	I2C_write(0x73, 0xF2); //f2
+	I2C_write(0xA2, 0x02); //02
+	// gate PCLK via HREF
+	I2C_write(0x15, 0x20); //no PLCK tgl on blank
+	*/
 //================================================
 /*
 {REG_COM3, COM3_DCWEN}, // enable downsamp/crop/window
