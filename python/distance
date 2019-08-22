@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Aug 22 17:03:48 2019
+
+@author: ds
+"""
+
+def make_usb():
+    try:
+        usb.close()
+    except:
+        pass
+    
+    try:
+        usb=serial.Serial('/dev/ttyUSB0', baudrate=Bd, timeout=TO)
+    except:
+        usb=serial.Serial('/dev/ttyUSB2', baudrate=Bd, timeout=TO)
+    
+    usb.flush()
+    usb.reset_input_buffer()
+    usb.reset_output_buffer()
+    return usb

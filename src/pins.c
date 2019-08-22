@@ -6,13 +6,14 @@
  */
 
 #include "stm32f10x.h"
+#include "ov7670.h"
 
-int fAPB1 = 8*1000000; //max 36M
-int fAPB2 = 128*1000000; //max 72M
-int fAHB = 128*1000000; //max 72M
+
+int fAPB1 = 8*1000000;
+int fAPB2 = 128*1000000;
+int fAHB = 128*1000000;
+
 void configureClocks(){
-	//set clock to 8xPPL MHz
-	/*enable clocks*/
 	//
 	RCC->CR |= RCC_CR_HSEON;
 	//RCC->CFGR = RCC_CFGR_PLLMULL9 | RCC_CFGR_PLLSRC | RCC_CFGR_PPRE1_DIV2;
@@ -34,12 +35,11 @@ void configureClocks(){
 	RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
 
 	RCC->APB1ENR |= RCC_APB1ENR_I2C1EN;
-
+	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
 	RCC->AHBENR |= RCC_AHBENR_DMA1EN;
 }
 
 void configureGPIO(){
-	//
 	// out, od, 2MHz: 0x2=0b0010
 	// out, pp, 2MHz: 0x6=0b0110
 	// out, pp, 50MHz, 0x7=0b0111
@@ -58,18 +58,19 @@ void configureGPIO(){
 	// PA8 (MCO-XCLK) = out, alt, pp, 50MHz
 	// PA9 (USART1 TX) = out, alt, pp, 2MHz
 	// PA10 (USART1 RX) = in, float
-	// PA11 (PCLK) = in
+	// PA11 (PCLK) = in, fl
 				///54321098
 	GPIOA->CRH = 0x444444AB;
 	//GPIOA->CRH = ((GPIOA->CRH & 0xFFFFFF00) | 0x000000AA);
 	//======================================
+	// PB0 (sensor OUT) = in, fl
 	// PB6 (SCL1) = out, alt, od, I2C1
 	// PB7 (SDA1) = out, alt, od, I2C1
 				///76543210
 	GPIOB->CRL = 0xEE444444;
 	//--------------------------------------
-	// PB10 (HREF) = in
-	// PB11 (VSYNC) = in
+	// PB10 (HREF) = in, fl
+	// PB11 (VSYNC) = in, fl
 	// PB12 (RST) = out, pp
 	// PB13 (PWUP) = out, pp
 				///54321098
@@ -82,61 +83,50 @@ void configureGPIO(){
 	GPIOB->BSRR |= GPIO_BSRR_BR12 | GPIO_BSRR_BS13;
 	//======================================
 	// not avail.
-				///76543210
+				/////76543210
 	//GPIOC->CRL = 0x44444444;
 	//--------------------------------------
 	// PC13 (built-in LED) = out, pp, 50MHz
 	// PC14 (GND) = out, pp, 2MHz
 	// PC15 (VDD) = out, pp, 2MHz
 				///54321098
-	GPIOC->CRH = 0x66744444;
-	GPIOC->CRH = ((GPIOC->CRH & 0x000FFFFF) | 0x66600000);
-	//GPIOC->BSRR |= (1<<14) | (1<<15);
+	GPIOC->CRH = 0x66644444;
+	GPIOC->BSRR |= GPIO_BSRR_BR14 | GPIO_BSRR_BS15;
 }
 
 void configureMCO(){
-	//main clock output for OV7670
+	// Main Clock Output for OV7670 XCLK
+	// source: HSI (8MHz)
 	RCC->CFGR |= RCC_CFGR_MCO_HSI;
 }
 
 void configureUART(){
-	//USART1->BRR = 72000000/4000000; //BaudRate_Register=CPU_Freq / Desired_Baudrate
+	// BaudRate_Register = CPU_Freq / Desired_Baudrate
 	USART1->BRR = fAPB2/4000000;
-	/*Default configuration: 8N1 */
-	/* Enable: USART, Rx not empty interrupt, Tx, Rx */
+	//Default configuration: 8N1, no changes
+	// Enable: USART, Rx not empty interrupt, Tx, Rx
 	USART1->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RXNEIE | USART_CR1_RE;
-	//USART1->DR = 'K'; //"ready"
+	// Enable interrupts
 	NVIC_EnableIRQ(USART1_IRQn);
 }
 
 void configureI2C(){
-	//master
-	int F = fAPB1/1000000;
-	I2C1->CR2 |= F; // MHz
-	// I2C slow mode - 100kHz
-	// duty cycle - 50:50
-	I2C1->CCR |= F*50;
-	// max rise time in Sm = 1000ns
-	I2C1->TRISE |= F*10 +1;
+	// Configure I2C1: Sm (100kHz), duty cycle: 50:50, Rise time: 1000ns (max for Sm)
+	int F = fAPB1/1000000; //clock, MHz
+
+	//Simplified formulas from RM:
+	I2C1->CR2 |= F; // input clock, MHz
+	I2C1->CCR |= F*50; // Sm (100KHz), duty cycle: 50:50
+	I2C1->TRISE |= F*10 +1; // rise time: 1000ns
+	// enable I2C
 	I2C1->CR1 |= I2C_CR1_PE;
 }
 
 void configureEXTI(){
-
-	//AFIO->EXTICR[3] = AFIO_EXTICR4_EXTI14_PB;
-	//AFIO->EXTICR[2] = AFIO_EXTICR3_EXTI10_PB;
-	AFIO->EXTICR[2] = AFIO_EXTICR3_EXTI11_PB;
-
-	EXTI->RTSR |=  EXTI_RTSR_TR11;
-	//EXTI->RTSR |=  EXTI_RTSR_TR10;
-	//EXTI->FTSR |= EXTI_FTSR_TR11;
-	//EXTI->FTSR |= EXTI_FTSR_TR10;
-	EXTI->IMR |= EXTI_IMR_MR11;
-	///EXTI->IMR |= EXTI_IMR_MR10;
-
-	//NVIC_EnableIRQ(EXTI2_IRQn);
-	//NVIC_EnableIRQ(EXTI4_IRQn);
-	//NVIC_EnableIRQ(EXTI15_10_IRQn);
+	// Configure EXTernal Interrupt on PB11 (VSYNC)
+	AFIO->EXTICR[2] = AFIO_EXTICR3_EXTI11_PB; // line 11 - port B
+	EXTI->RTSR |=  EXTI_RTSR_TR11; // interrupt on rising edge
+	EXTI->IMR |= EXTI_IMR_MR11; // unmask interrupt
 }
 
 void configureTimer(){
@@ -152,19 +142,29 @@ void configureTimer(){
 	//TIM3->CR1 |= TIM_CR1_CEN;
 	*/
 	//=================================
-	//T1C4 as input capture to generate DMA req. on PCLK rising edge
-	TIM1->CCMR2 |= TIM_CCMR2_CC4S_0;  //
-	TIM1->CCER |= TIM_CCER_CC4P; //
-	TIM1->CCER |= TIM_CCER_CC4E; //
-	TIM1->DIER |= TIM_DIER_CC4DE; // DMA
+	// Timer 1, Channel 4 as input capture to generate DMA req. on PCLK rising edge
+	// More intuitive approach would be to generate DMA request on rising edge of PCLK
+	// However my uC doesn't support it, so I use timer in input capture mode.
+	// By default the timer starts counting on rising edge, counts until falling edge
+	// and then latches measured value. Then it can also generate interrupt or DMA request.
+
+	// Here I need timer only to generate DMA request on rising edge.
+	// I need only to reverse polarity.
+	// Measured value is ignored.
+
+	TIM1->CCMR2 |= TIM_CCMR2_CC4S_0;  // input capture mode on channel 4
+	TIM1->CCER |= TIM_CCER_CC4P; // reverse polarity: stop measuring on rising edge
+	TIM1->CCER |= TIM_CCER_CC4E; // enable
+	TIM1->DIER |= TIM_DIER_CC4DE; // DMA reqest on enable
 	TIM1->CNT=0; // Reset CouNT register
+	// don't enable TIM1 yet!
 
 }
 
 void configureADC(){
-	/* configure ADC1: order of channels*/
-	ADC1->SQR3 |= 0b00010; /*1st: channel 2 (on PA2 pin)*/
-	/* number of channels =0b00000 +1 = 1 */
+	// configure ADC1: order of channels
+	ADC1->SQR3 = 8; /*1st: channel 2 (on PB0 pin)*/
+
 		/*
 		 * Set conversion time
 		 * I don't care about speed, so I set the longest possible
@@ -173,191 +173,163 @@ void configureADC(){
 		 */
 	ADC1->SMPR2 |= 0b000000111;
 
-	/* Discontinuous mode: 1 channel per conversion */
+	// Discontinuous mode: 1 channel per conversion
 	ADC1->CR1 |= ADC_CR1_DISCEN;
-	/* Start conversion with writing SWSTART bit */
+	// Start conversion with writing SWSTART bit
 	ADC1->CR2 |= ADC_CR2_EXTTRIG | ADC_CR2_EXTSEL_0 | ADC_CR2_EXTSEL_1 | ADC_CR2_EXTSEL_2;
-	/* Turn on ADC1 */
+	// Turn on ADC1
 	ADC1->CR2 |= ADC_CR2_ADON;
 
-	/*
-	* Start calibration procedure
-	* and wait till it ends
-	*/
-
+	//Start calibration procedure and wait till it ends
 	ADC1->CR2 |= ADC_CR2_CAL;
 	while(ADC1->CR2 & ADC_CR2_CAL);
 }
 
-//char I2C_read(char);
-void I2C_write(char, char);
-
-//register, value, ...
-char RV1[] = {
-
-		//QQVGA, YUV according to IG
-		0x11, 0x02, //prescaler
-		0x12, 0x00,
-		0x0c, 0x04,
-		0x3e, 0x1a,
-		0x70, 0x3a,
-		0x71, 0x35,
-		0x72, 0x22,
-		0x73, 0xf2,
-		0xa2, 0x02,
-		0x15, 0x20,	//gate PCLK via HREF
-		0xff, 0xff	//terminate
-};
-char RV2[] = {
-		//QVGA, YUV according to IG
-		0x11, 0x0F, //prescaler
-		0x12, 0x00,
-		0x0c, 0x04,
-		0x3e, 0x19,
-		0x70, 0x3a,
-		0x71, 0x35,
-		0x72, 0x11,
-		0x73, 0xf1,
-		0xa2, 0x02,
-		0x15, 0x20,	//gate PCLK via HREF
-		0xff, 0xff //terminate
-};
-char RV3[] = {
-		//QVGA, YUV according to IG
-		0x11, 0x0A, //prescaler
-		0x12, 0x00,
-		0x0c, 0x00,
-		0x3e, 0x00,
-		0x70, 0x3a,
-		0x71, 0x35,
-		0x72, 0x11,
-		0x73, 0xf0,
-		0xa2, 0x02,
-		//0x56, 0x60, //contrast
-		//0x41, 0x30, //sharpness
-		0x15, 0x20,	//gate PCLK via HREF
-		0xff, 0xff //terminate
-};
 void configureCamera(void){
-	volatile int i;
-	for(i=100000;i>0;--i); //give time to start
-	I2C_write(0x12, 0x80); //RESET
-	for(i=100000;i>0;--i);
+	volatile int i; // counter
+
+	for(i=100000;i>0;--i); // give time to start
+	I2C_write(0x12, 0x80); // RESET
+	for(i=100000;i>0;--i); // give some time to start after reset
 
 	i = 0;
-	char* p = RV3;
-	while(p[i] != 0xff){
+	// use pairs of Register and Value to configure camera
+	char* p = RV_vga_yuv;
+	while(p[i] != 0xff){ //all pairs are terminated with 0xff, 0xff
 		I2C_write(p[i], p[i+1]);
 		i=i+2;
 	}
 }
 
 void configureDMA(){
-	/*
-	DMA1_Channel2->CNDTR = 2;
-	DMA1_Channel2->CPAR = (uint32_t)&(USART1->DR);
-	DMA1_Channel2->CMAR = (uint32_t)&dma_test;
-	//DMA1_Channel2->CMAR = (uint32_t)&(GPIOA->IDR);
-	DMA1_Channel2->CCR |= DMA_CCR2_MINC | DMA_CCR2_CIRC | DMA_CCR2_DIR; //| DMA_CCR3_CIRC
-	//DMA1_Channel2->CCR |= DMA_CCR2_EN;
-	*/
-	DMA1_Channel4->CNDTR = 0xFFFF;
+	// Configure DMA1:
+	// 8bits from GPIOA to USART1
+	//
+	DMA1_Channel4->CNDTR = 0xFFFF; // doesn't matter?
 	DMA1_Channel4->CPAR = (uint32_t)&(USART1->DR);
-	//DMA1_Channel4->CMAR = (uint32_t)&dma_test;
 	DMA1_Channel4->CMAR = (uint32_t)&(GPIOA->IDR);
-	DMA1_Channel4->CCR |= (DMA_CCR4_MINC&0) | (DMA_CCR4_CIRC) | DMA_CCR4_DIR;
-	//DMA1_Channel4->CCR |= DMA_CCR4_EN;
+	// circular: don't stop transfering;
+	DMA1_Channel4->CCR |= DMA_CCR4_CIRC | DMA_CCR4_DIR;
+	// don't enable DMA yet!
 }
 
 void blink(){
-	GPIOC->BSRR |= ((GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13); //blink
+	//toggle state of PC13 (built-in LED)
+	GPIOC->BSRR |= ((GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13);
 }
 
-int r4=0;
-char RX=0;
-char Rxr=0;
-char Rxv=0;
+char RX=0; //received data
+// variables for interfacing with I2C
+char i2c_register = 0xFF;
+char i2c_value = 0;
+char i2c_read = 0;
+
+// next received value will be treated as:
+// 0: command
+// r: register for i2c
+// v: value for i2c
+char usart_receiving = 0;
+
 __attribute__((interrupt)) void USART1_IRQHandler(void){
+	// usart will always receive one byte on one interrupt,
+	// and sent one byte
+	// exception: sending frame (however, data is sent outside this
+	// interrupt, but via DMA requests
+
 	if(USART1->SR & USART_SR_RXNE){
-		RX = USART1->DR; //MUST-READ
-		switch(RX){
-		case '1': //capture
-			// on data receive: action
+		RX = USART1->DR;
 
-			USART1->DR = 'k';//
-			/*
-			 *         __                      __
-			 * _______/  \____________________/  \_Vsync
-			 *   _           _   _   _   _
-			 * _/ \_________/ \_/ \_/ \_/ \________ Pclk
-			 *
-			 *           +DMA                  +dma
-			 */
-			while(!(USART1->SR & USART_SR_TXE));
-			//if((GPIOB->IDR & GPIO_IDR_IDR11))
-			//while(GPIOB->IDR & GPIO_IDR_IDR11);
+		switch(usart_receiving){
+		case 0:
+			switch(RX){
+			case 0:
+				USART1->DR = '0';
+				break;
+			case '1': //capture
+				while(!(USART1->SR & USART_SR_TXE));
+				USART1->DR = 'C'; // response
+				/*
+				 *         __                      __
+				 * _______/  \____________________/  \_Vsync
+				 *   _           _   _   _   _
+				 * _/ \_________/ \_/ \_/ \_/ \________ Pclk
+				 *
+				 *           +DMA                  +dma
+				 */
+				while(!(GPIOB->IDR & GPIO_IDR_IDR11)); // wait while VSYNC is LOW
+				GPIOC->BSRR = GPIO_BSRR_BR13; // LED on
+				TIM1->CR1 |= TIM_CR1_CEN; // enable TIM1
+				DMA1_Channel4->CCR |= DMA_CCR4_EN; // enable DMA1
+				NVIC_EnableIRQ(EXTI15_10_IRQn); // enable interrupts on VSYNC
+				while(GPIOB->IDR & GPIO_IDR_IDR11); //wait while VSYNC is HIGH
+				NVIC_DisableIRQ(USART1_IRQn);
+				// now DMA will send data via uart and enable them on rising VSYNC
+				break;
+			case '2': // read distance
+				while(!(USART1->SR & USART_SR_TXE));
+				USART1->DR = ((GPIOB->IDR & GPIO_IDR_IDR0) ? '_' : '#');
+				break;
 
-			while(!(GPIOB->IDR & GPIO_IDR_IDR11));
-
-			GPIOC->BSRR = GPIO_BSRR_BR13;
-			TIM1->CR1 |= TIM_CR1_CEN;
-			DMA1_Channel4->CCR |= DMA_CCR4_EN;
-			//for(int i=0; i<100;++i)asm("nop");
-			//NVIC_ClearPendingIRQ(EXTI15_10_IRQn);
-			//EXTI->PR = 0xFFFF;
-			NVIC_EnableIRQ(EXTI15_10_IRQn);
-			//while((GPIOB->IDR & GPIO_IDR_IDR11));
-			//for(int i=0; i<0xFFFF; ++i) asm("nop");
-			//for(volatile int i=0; i<130455; ++i);
-			while(GPIOB->IDR & GPIO_IDR_IDR11);
-
-			//while(!(GPIOB->IDR & GPIO_IDR_IDR11));
-			//DMA1_Channel4->CCR &= ~DMA_CCR4_EN;
-			//TIM1->CR1 &= ~TIM_CR1_CEN;
+			case '3': // set register
+				USART1->DR = 'r';
+				usart_receiving = 'r';
+				break;
+			case '4': // get register
+				USART1->DR = i2c_register;
+				break;
+			case '5': // set value
+				USART1->DR = 'v';
+				usart_receiving = 'v';
+				break;
+			case '6': // get value
+				USART1->DR = i2c_value;
+				break;
+			case '7': // I2C write
+				USART1->DR = 'W';
+				I2C_write(i2c_register, i2c_value);
+				break;
+			case '8': // I2C read
+				i2c_read = I2C_read(i2c_register);
+				USART1->DR = i2c_read;
+				break;
+			case 'R': //TODO: reset all
+				USART1->DR = 'x';
+				break;
+			case 'r': //TODO: reset camera
+				USART1->DR = 'x';
+				break;
+			default: // unrecognized
+				USART1->DR = '?';
+				break;
+			}
 			break;
-		case '9': //command
-			NVIC_DisableIRQ(USART1_IRQn);
+		case 'r': // save register
 			USART1->DR = 'r';
-			while(!(USART1->SR & USART_SR_RXNE));
-			Rxr = USART1->DR;
+			i2c_register = RX;
+			usart_receiving = 0; // normal mode
+			break;
+		case 'v': // save value
 			USART1->DR = 'v';
-			while(!(USART1->SR & USART_SR_RXNE));
-			Rxv = USART1->DR;
-			I2C_write(Rxr, Rxv);
-			USART1->DR = 'i';
-			NVIC_ClearPendingIRQ(USART1_IRQn);
-			NVIC_EnableIRQ(USART1_IRQn);
+			i2c_value = RX;
+			usart_receiving = 0; // normal mode
 			break;
-		case 'R': //reset all
-			break;
-		case 'r': //reset camera
-			break;
+		default: // unrecognized mode
+			USART1->DR = 'X';
+			usart_receiving=0;
 		}
 	}
+	return;
 }
 
-int cnt_HP=0;
-int cnt_HF=0;
-int cnt_VP=0;
-int cnt_VF=0;
 __attribute__((interrupt)) void EXTI15_10_IRQHandler(void){
-	//if(EXTI->PR & EXTI_PR_PR11){ //_VSYNC_
-		EXTI->PR = EXTI_PR_PR11;
-		//for(int i=0; i<100; ++i) asm("nop");
-		if((GPIOB->IDR & GPIO_IDR_IDR11)){// rising
-
-			//while(GPIOB->IDR & GPIO_IDR_IDR11);
-			//USART1->DR = 'V';
-			++cnt_VP;
-			GPIOC->BSRR = GPIO_BSRR_BS13;
-			DMA1_Channel4->CCR &= ~DMA_CCR4_EN;
-			TIM1->CR1 &= ~TIM_CR1_CEN;
-			NVIC_DisableIRQ(EXTI15_10_IRQn);
+		EXTI->PR = EXTI_PR_PR11; // clear Pending Register
+		if((GPIOB->IDR & GPIO_IDR_IDR11)){ // rising edge - END OF FRAME
+			GPIOC->BSRR = GPIO_BSRR_BS13; // turn off LED
+			DMA1_Channel4->CCR &= ~DMA_CCR4_EN; // disable DMA1
+			TIM1->CR1 &= ~TIM_CR1_CEN; // disable TIM1
+			NVIC_DisableIRQ(EXTI15_10_IRQn); // disable interrupts [from VSYNC]
+			NVIC_EnableIRQ(USART1_IRQn); // enable USART interrupt
 		}
-		//else{ //falling
-			//USART1->DR = 'v';
-		//	++cnt_VF;
-		//}
 }
 
 __attribute__((interrupt)) void SysTick_Handler(void){

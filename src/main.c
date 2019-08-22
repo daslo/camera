@@ -19,6 +19,7 @@ void configureCamera();
 int main(void) {
 	configureClocks();
 	configureGPIO();
+	//configureADC();
 	configureMCO();
 	configureI2C();
 	configureUART();
@@ -26,7 +27,8 @@ int main(void) {
 	configureCamera();
 	configureTimer();
 	configureDMA();
-	GPIOC->BSRR = GPIO_BSRR_BS13;
+
+	GPIOC->BSRR = GPIO_BSRR_BS13; //LED off
 	//SysTick_Config(16000000);
 
 	for(;;);

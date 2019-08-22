@@ -11,6 +11,11 @@ from matplotlib import pyplot as plt
 from pyzbar.pyzbar import decode
 import time
 
+TO = 10 # timeout for data read
+Bd = 4000000 # serial baudrate
+
+DS = "614881A" # number of bytes to read + version 
+
 
 def make_usb():
     try:
@@ -88,10 +93,6 @@ def image(data, DS):
         
     return Image
 
-TO = 15 # timeout for data read
-Bd = 4000000 # serial baudrate
-
-DS = "614881A" # number of bytes to read + version 
 
 if __name__ == "__main__":
     try:
